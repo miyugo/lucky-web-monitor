@@ -7,7 +7,7 @@ lucky-web-monitor/
 ├── main.py  
 ├── index.html  
 └── data/  
-  ├── config.json  
+    ├── config.json  
   ├── lucky_logs.csv  
   ├── ip_geo.json  
   └── icon.png  
