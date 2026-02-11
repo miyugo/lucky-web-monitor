@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Lucky 流量全景审计系统</title>
+    <link rel="icon" href="/favicon.ico">
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+    <script src="https://unpkg.com/vue@3"></script>
+    <script src="https://unpkg.com/element-plus"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <script src="https://unpkg.com/@element-plus/icons-vue"></script>
+    <style>
+        html, body { height: 100%; margin: 0; overflow: hidden; background-color: #f0f2f5; }
+        #app { height: 100%; padding: 12px; box-sizing: border-box; display: flex; flex-direction: column; }
+        body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+
+        .header-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-shrink: 0; }
+        .header-title { font-size: 16px; font-weight: 600; color: #303133; display: flex; align-items: center; }
+        .header-title::before { content: ""; width: 4px; height: 16px; background: #409eff; margin-right: 8px; border-radius: 2px; }
+
+        .main-container { flex-grow: 1; position: relative; height: 100%; }
+        .full-height-row { height: 100%; position: absolute; width: 100%; top: 0; left: 0; }
+
+        .main-card { height: 100%; display: flex; flex-direction: column; border: 1px solid #e6e6e6 !important; border-radius: 2px; overflow: hidden; }
+        .main-card .el-card__header { padding: 8px 12px !important; background: #fafafa; font-size: 14px; flex-shrink: 0; }
+        .main-card .el-card__body { flex: 1; overflow: hidden; padding: 0 !important; position: relative; }
+
+        .table-wrapper { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
+        .el-table { font-size: 13px !important; }
+        .el-table .cell { white-space: nowrap !important; word-break: keep-all !important; padding: 0 10px !important; }
+
+        .clickable-ip { color: #409eff; cursor: pointer; font-weight: 500; }
+        .geo-label { color: #67c23a; }
+        .m-tag { padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: bold; }
+        .m-get { background: #e1f3d8; color: #67c23a; }
+        .m-post { background: #faecd8; color: #e6a23c; }
+
+        .search-input { width: 300px; }
+        .search-input .el-input__wrapper { border-radius: 4px; }
+
+        /* 状态标记样式 */
+        .status-tag { margin-right: 15px; font-size: 12px; }
+        .count-num { color: #409eff; font-weight: bold; margin: 0 2px; }
+
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-thumb { background: #cfd3dc; border-radius: 3px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div class="header-bar">
+            <div class="header-title">Lucky 流量全景审计系统</div>
+            <div style="font-size: 12px; color: #909399; display: flex; align-items: center;">
+                <div class="status-tag" v-if="selectedIp">
+                    锁定 IP: <span style="color: #409eff; font-weight: bold;">{{selectedIp}}</span>
+                </div>
+                <div class="status-tag" v-if="searchKeyword || selectedIp">
+                    匹配记录: <span class="count-num">{{filteredLogs.length}}</span> 条
+                </div>
+                <div class="status-tag" v-else>
+                    总记录: <span class="count-num">{{info.logs.length}}</span> 条
+                </div>
+                <span>最后更新: {{info.last_update}}</span>
+            </div>
+        </div>
+
+        <div class="main-container">
+            <el-row :gutter="10" class="full-height-row">
+                <el-col :span="5">
+                    <el-card class="main-card" shadow="never">
+                        <template #header><b>流量来源排行</b></template>
+                        <div class="table-wrapper">
+                            <el-table :data="info.ip_rank" height="100%" @row-click="handleRowClick" highlight-current-row style="cursor: pointer;">
+                                <el-table-column prop="ip" label="IP" width="125"></el-table-column>
+                                <el-table-column prop="count" label="次数" width="55" align="center"></el-table-column>
+                                <el-table-column prop="location" label="归属地" min-width="80" show-overflow-tooltip></el-table-column>
+                            </el-table>
+                        </div>
+                    </el-card>
+                </el-col>
+
+                <el-col :span="19">
+                    <el-card class="main-card" shadow="never">
+                        <template #header>
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <b>访问流水明细</b>
+                                <div style="display: flex; align-items: center; gap: 12px;">
+                                    <el-input
+                                        v-model="searchKeyword"
+                                        class="search-input"
+                                        placeholder="搜索任意内容 (IP、城市、URL、方法...)"
+                                        size="small"
+                                        clearable
+                                    >
+                                        <template #prefix><el-icon><search /></el-icon></template>
+                                    </el-input>
+                                    <el-button v-if="selectedIp || searchKeyword" type="primary" link size="small" @click="resetFilter">重置重置</el-button>
+                                </div>
+                            </div>
+                        </template>
+                        <div class="table-wrapper">
+                            <el-table :data="filteredLogs" height="100%" stripe border style="width: 100%">
+                                <el-table-column prop="time" label="访问时间" width="160"></el-table-column>
+                                <el-table-column label="IP" width="125">
+                                    <template #default="s">
+                                        <span class="clickable-ip" @click.stop="copy(s.row.ip)">{{s.row.ip}}</span>
+                                    </template>
+                                </el-table-column>
+                                <el-table-column label="归属地" width="130" show-overflow-tooltip>
+                                    <template #default="s">
+                                        <span class="geo-label">{{ findGeo(s.row.ip) }}</span>
+                                    </template>
+                                </el-table-column>
+                                <el-table-column label="方法" width="70" align="center">
+                                    <template #default="s">
+                                        <span :class="['m-tag', s.row.method==='GET'?'m-get':'m-post']">{{s.row.method}}</span>
+                                    </template>
+                                </el-table-column>
+                                <el-table-column prop="host" label="域名" min-width="180" show-overflow-tooltip></el-table-column>
+                                <el-table-column label="URL" min-width="280" show-overflow-tooltip>
+                                    <template #default="s">
+                                        <span @click="copy(s.row.url)" style="cursor:pointer">{{s.row.url}}</span>
+                                    </template>
+                                </el-table-column>
+                                <el-table-column prop="rule" label="命中规则" min-width="150" show-overflow-tooltip></el-table-column>
+                            </el-table>
+                        </div>
+                    </el-card>
+                </el-col>
+            </el-row>
+        </div>
+    </div>
+
+    <script>
+        const { createApp, ref, computed, onMounted } = Vue;
+        const { ElMessage } = ElementPlus;
+
+        createApp({
+            setup() {
+                const info = ref({ logs: [], ip_rank: [], last_update: '--' });
+                const selectedIp = ref('');
+                const searchKeyword = ref('');
+
+                const load = () => { axios.get('/api/data').then(res => { info.value = res.data; }); };
+
+                const findGeo = (ip) => {
+                    const matched = info.value.ip_rank.find(item => item.ip === ip);
+                    return matched ? matched.location : '识别中';
+                };
+
+                const filteredLogs = computed(() => {
+                    let data = info.value.logs;
+                    if (selectedIp.value) {
+                        data = data.filter(l => l.ip === selectedIp.value);
+                    }
+                    if (searchKeyword.value) {
+                        const kw = searchKeyword.value.toLowerCase();
+                        data = data.filter(l => {
+                            const geo = findGeo(l.ip).toLowerCase();
+                            return (
+                                (l.time && l.time.includes(kw)) ||
+                                (l.ip && l.ip.includes(kw)) ||
+                                (geo && geo.includes(kw)) ||
+                                (l.method && l.method.toLowerCase().includes(kw)) ||
+                                (l.host && l.host.toLowerCase().includes(kw)) ||
+                                (l.url && l.url.toLowerCase().includes(kw)) ||
+                                (l.rule && l.rule.toLowerCase().includes(kw))
+                            );
+                        });
+                    }
+                    return data;
+                });
+
+                const handleRowClick = (row) => {
+                    selectedIp.value = (selectedIp.value === row.ip) ? '' : row.ip;
+                };
+
+                const resetFilter = () => {
+                    selectedIp.value = '';
+                    searchKeyword.value = '';
+                    ElMessage({ message: '已重置所有筛选', type: 'info', duration: 1000 });
+                };
+
+                const copy = (text) => {
+                    navigator.clipboard.writeText(text).then(() => {
+                        ElMessage({ message: '复制成功', type: 'success', duration: 800 });
+                    });
+                };
+
+                onMounted(() => { load(); setInterval(load, 15000); });
+                return { info, selectedIp, searchKeyword, filteredLogs, findGeo, handleRowClick, resetFilter, copy };
+            }
+        }).use(ElementPlus).component('Search', ElementPlusIconsVue.Search).mount('#app');
+    </script>
+</body>
+</html>
