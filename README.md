@@ -1,3 +1,4 @@
+<img width="1912" height="924" alt="image" src="https://github.com/user-attachments/assets/3f25fe68-9c85-46c4-a0da-ef4cc7e48fa1" />
 # Lucky 流量审计看板 (Final Edition)
 本看板专门针对 Lucky 的 Web 服务日志提供实时审计。
 
