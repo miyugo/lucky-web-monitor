@@ -2,15 +2,15 @@
 本看板专门针对 Lucky 的 Web 服务日志提供实时审计。
 
 #项目架构
-lucky-web-monitor/
-├── Dockerfile
-├── main.py
-├── index.html
-└── data/
-    ├── config.json
-    ├── lucky_logs.csv
-    ├── ip_geo.json
-    └── icon.png
+lucky-web-monitor/  
+├── Dockerfile  
+├── main.py  
+├── index.html  
+└── data/  
+    ├── config.json  
+    ├── lucky_logs.csv  
+    ├── ip_geo.json  
+    └── icon.png  
 
 #目录说明
 - main.py : 后端核心逻辑
