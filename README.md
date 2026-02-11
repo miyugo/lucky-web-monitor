@@ -7,17 +7,17 @@ lucky-web-monitor/
 ├── main.py  
 ├── index.html  
 └── data/  
-&emsp;&emsp;├── config.json  
-&emsp;&emsp;├── lucky_logs.csv  
-&emsp;&emsp;├── ip_geo.json  
-&emsp;&emsp;└── icon.png  
+  ├── config.json  
+  ├── lucky_logs.csv  
+  ├── ip_geo.json  
+  └── icon.png  
 
 #目录说明
 - main.py : 后端核心逻辑
 - index.html : 前端 UI 界面
 - data/ : 数据存储目录
     - config.json : 核心配置文件
-    - lucky_logs.csv ：日志存储目录
+    - lucky_logs.csv ：日志存储文件
     - ip_geo.json : IP 归属地自动缓存
     - icon.png ：logo
  
