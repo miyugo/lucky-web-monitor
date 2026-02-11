@@ -22,10 +22,10 @@ lucky-web-monitor/
     - icon.png ：logo
  
 #使用说明
-在config文件内填入lucky的url与opentoken
-推荐docker运行
-docker build -t lucky-web-monitor:latest .
-docker compose up -d
+在config文件内填入lucky的url与opentoken  
+推荐docker运行  
+docker build -t lucky-web-monitor:latest .  
+docker compose up -d  
 
 #依赖
    fastapi uvicorn requests apscheduler
