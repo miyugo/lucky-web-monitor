@@ -1,0 +1,12 @@
+version: '1'
+services:
+  lucky-web-monitor:
+    image: lucky-web-monitor:latest
+    container_name: my-lucky-web-monitor
+    ports:
+      - "8001:8001"
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./data:/app/data  # 核心：将宿主机的 data 目录映射进去
+    restart: always
