@@ -1,5 +1,5 @@
 {
-    "lucky_url": "",
-    "open_token": "",
+    "lucky_url": "YOUR_LUCKY_URL:16601",
+    "open_token": "YOUR_TOKEN_HERE",
     "sync_interval_minutes": 1
 }
