@@ -23,18 +23,19 @@ lucky-web-monitor/
     - icon.png ：logo
  
 #使用说明（二选一）
-##方法一
+
+##方法一  
 使用docker-compose文件直接拉取  
 下载docker-compose.yml文件  
 docker compose up -d  
 在当前目录data下的config.json填入lucky的url与opentoken后  
-docker restart my-lucky-web-monitor
-##方法二
-拉取源码：git clone或下载压缩包
-在config文件内填入lucky的url与opentoken    
-docker build -t miyugo/lucky-web-monitor .  
-docker run -d -e TZ=Asia/Shanghai --name my-lucky-web-monitor --network bridge -p 8001:8001 -v ./data:/app/data miyugo/lucky-web-monitor
+docker restart my-lucky-web-monitor  
 
+##方法二  
+拉取源码：git clone或下载压缩包  
+在config文件内填入lucky的url与opentoken  
+docker build -t miyugo/lucky-web-monitor .  
+docker run -d -e TZ=Asia/Shanghai --name my-lucky-web-monitor --network bridge -p 8001:8001 -v ./data:/app/data miyugo/lucky-web-monitor  
 
 #依赖
    fastapi uvicorn requests apscheduler
