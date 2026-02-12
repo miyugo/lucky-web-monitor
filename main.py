@@ -20,7 +20,7 @@ os.makedirs(DATA_DIR, exist_ok=True)
 # --- 1. 配置加载逻辑 ---
 def load_config():
     default_config = {
-        "lucky_url": "https://YOUR_LUCKY_URL:16601",
+        "lucky_url": "https://YOUR_LUCKY_URL:16601/安全入口",
         "open_token": "YOUR_TOKEN_HERE",
         "sync_interval_minutes": 1
     }
