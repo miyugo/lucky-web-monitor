@@ -1,15 +1,18 @@
-import json, requests, datetime, csv, os, urllib3
+import json, requests, datetime, csv, os, urllib3, re
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, Response
 from apscheduler.schedulers.background import BackgroundScheduler
 from contextlib import asynccontextmanager
+import ipaddress
+import requests
 
 # 彻底禁用 InsecureRequestWarning 警告
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # --- 目录与文件路径配置 ---
 DATA_DIR = "data"
-CONFIG_FILE = os.path.join(DATA_DIR, "config.json")
+CONFIG_DIR = "config"
+CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
 CSV_FILE = os.path.join(DATA_DIR, "lucky_logs.csv")
 GEO_CACHE_FILE = os.path.join(DATA_DIR, "ip_geo.json")
 ICON_FILE = os.path.join(DATA_DIR, "icon.png") # 定义图标路径
@@ -22,7 +25,8 @@ def load_config():
     default_config = {
         "lucky_url": "https://YOUR_LUCKY_URL:16601/安全入口",
         "open_token": "YOUR_TOKEN_HERE",
-        "sync_interval_minutes": 1
+        "sync_interval_minutes": 1,
+        "sync_interval_seconds": 30
     }
     if not os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
@@ -36,6 +40,7 @@ config = load_config()
 LUCKY_URL = config.get("lucky_url")
 TOKEN = config.get("open_token")
 SYNC_MINS = config.get("sync_interval_minutes", 1)
+SYNC_SECONDS = config.get("sync_interval_seconds")
 
 # --- 2. 优化连接池 ---
 session = requests.Session()
@@ -58,19 +63,73 @@ def save_geo_cache():
     except Exception as e:
         print(f"保存 Geo 缓存失败: {e}")
 
-def get_geo(ip):
-    if ip.startswith(("192.168.", "10.", "172.", "127.", "169.254.")): return "局域网"
-    if ip in ip_geo_cache: return ip_geo_cache[ip]
+ip_geo_cache = {}
+
+def is_local_ip(ip: str) -> bool:
+    """判断是否为局域网/本地地址（IPv4 + IPv6）"""
     try:
-        r = requests.get(f"http://ip-api.com/json/{ip}?lang=zh-CN", timeout=3)
-        res = r.json()
-        if res.get('status') == 'success':
-            location = f"{res.get('regionName','')} {res.get('city','')}".strip()
-            ip_geo_cache[ip] = location or "未知公网"
-            save_geo_cache()
-            return ip_geo_cache[ip]
-        return "查询失败"
-    except: return "查询超时"
+        addr = ipaddress.ip_address(ip)
+        return (
+            addr.is_private      # 私网：10/8, 172.16/12, 192.168/16, fc00::/7
+            or addr.is_loopback  # 127.0.0.1, ::1
+            or addr.is_link_local# 169.254/16, fe80::/10
+            or addr.is_reserved
+            or addr.is_multicast
+            or addr.is_unspecified  # 0.0.0.0, ::
+        )
+    except ValueError:
+        return False  # 非法IP，留给后续查询失败处理
+
+def get_geo(ip):
+    ip = ip.strip()
+
+    # 可选：去掉 IPv6 zone id（如 fe80::1%eth0）
+    if "%" in ip:
+        ip = ip.split("%", 1)[0]
+
+    if is_local_ip(ip):
+        return "局域网"
+
+    if ip in ip_geo_cache:
+        return ip_geo_cache[ip]
+
+    # IPv6 使用 ipw.cn API 查询
+    if ":" in ip:
+        try:
+            r = requests.get(
+                "https://rest.ipw.cn/api/ip/query",
+                params={"ip": ip, "lang": "zh"},
+                headers={
+                    "accept": "application/json",
+                    "origin": "https://ipw.cn",
+                    "referer": "https://ipw.cn/",
+                    "user-agent": "Mozilla/5.0",
+                },
+                timeout=3,
+            )
+            print(f"[ipw.cn] status={r.status_code} ip={ip} body={r.text}")
+            if r.status_code != 200:
+                return "查询失败"
+            data = r.json()
+            if isinstance(data, dict):
+                nested = data.get("data") if isinstance(data.get("data"), dict) else data
+                if isinstance(nested, dict):
+                    parts = [
+                        nested.get("continent"),
+                        nested.get("country"),
+                        nested.get("province"),
+                        nested.get("city"),
+                        nested.get("district"),
+                        nested.get("isp"),
+                    ]
+                    parts = [p for p in parts if isinstance(p, str) and p.strip()]
+                    if parts:
+                        ip_geo_cache[ip] = " ".join(parts)
+                        save_geo_cache()
+                        return ip_geo_cache[ip]
+            return "查询失败"
+        except Exception:
+            return "查询超时"
 
 # --- 4. CSV 持久化逻辑 ---
 def load_csv_logs():
@@ -97,7 +156,6 @@ data_cache = {"logs": current_logs, "ip_rank": [], "last_update": "启动中..."
 
 def fetch_lucky_data():
     global data_cache, current_logs
-    print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] 开始同步...")
     try:
         r_resp = session.get(f"{LUCKY_URL}/api/webservice/rules", timeout=10)
         rules_list = r_resp.json().get('ruleList', [])
@@ -155,7 +213,10 @@ def fetch_lucky_data():
 async def lifespan(app: FastAPI):
     fetch_lucky_data()
     scheduler = BackgroundScheduler()
-    scheduler.add_job(fetch_lucky_data, 'interval', minutes=SYNC_MINS, max_instances=1, coalesce=True)
+    if SYNC_SECONDS and SYNC_SECONDS > 0:
+        scheduler.add_job(fetch_lucky_data, 'interval', seconds=SYNC_SECONDS, max_instances=1, coalesce=True)
+    else:
+        scheduler.add_job(fetch_lucky_data, 'interval', minutes=SYNC_MINS, max_instances=1, coalesce=True)
     scheduler.start()
     yield
     scheduler.shutdown()
@@ -177,4 +238,4 @@ async def favicon():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    uvicorn.run(app, host="0.0.0.0", port=10099)

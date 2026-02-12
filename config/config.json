@@ -1,0 +1,5 @@
+{
+    "lucky_url": "lucky_url:lucky端口/安全入口",
+    "open_token": "OpenToken",
+    "sync_interval_seconds": 5
+}
