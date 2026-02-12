@@ -1,7 +1,7 @@
 version: '1'
 services:
   lucky-web-monitor:
-    image: lucky-web-monitor:latest
+    image: miyugo/lucky-web-monitor:latest
     container_name: my-lucky-web-monitor
     ports:
       - "8001:8001"
