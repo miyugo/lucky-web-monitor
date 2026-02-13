@@ -12,6 +12,7 @@ services:
       # - OPEN_TOKEN=YOUR_LUCKY_OPENTOKEN
       # - SYNC_INTERVAL_MINUTES=1  # 如果取消注释，将每1分同步（同步参数为二选一）
       # - SYNC_INTERVAL_SECONDS=30  # 如果取消注释，将每30秒同步（同步参数为二选一）
+      # - MAX_LOG_COUNT=5000  # 界面只展示最近 5000 条，其余的去 data 文件夹看归档
     volumes:
       - ./config:/app/config  # 核心：将宿主机的 config 目录映射进去
       - ./data:/app/data  # 核心：将宿主机的 data 目录映射进去
