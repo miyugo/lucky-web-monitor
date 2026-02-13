@@ -1,12 +1,17 @@
 version: '1'
 services:
-  lucky-web-monitor:
+  lucky-monitor:
     image: miyugo/lucky-web-monitor:latest
     container_name: my-lucky-web-monitor
     ports:
       - "8001:8001"
     environment:
       - TZ=Asia/Shanghai
+      # --- 以下为可选：优先级环境变量->配置文件 ---
+      # - LUCKY_URL=http://YOUR_LUCKY_URL:YOUR_LUCKY_PORT/安全入口
+      # - OPEN_TOKEN=YOUR_LUCKY_OPENTOKEN
+      # - SYNC_INTERVAL_minutes=1  # 如果取消注释，将每1分同步（同步参数为二选一）
+      # - SYNC_INTERVAL_SECONDS=30  # 如果取消注释，将每30秒同步（同步参数为二选一）
     volumes:
       - ./config:/app/config  # 核心：将宿主机的 config 目录映射进去
       - ./data:/app/data  # 核心：将宿主机的 data 目录映射进去
