@@ -22,14 +22,12 @@ lucky-web-monitor/
     - ip_geo.json : IP 归属地自动缓存
     - icon.png ：logo
  
-#使用说明（二选一）
+#使用说明（任选其一，推荐方法一）
 
 ##方法一  
 使用docker-compose文件直接拉取  
-下载docker-compose.yml文件  
+下载docker-compose.yml文件，填入lucky的url与opentoken后  
 docker compose up -d  
-在当前目录data下的config.json填入lucky的url与opentoken后  
-docker restart my-lucky-web-monitor  
 
 ##方法二  
 拉取源码：git clone或下载压缩包  
