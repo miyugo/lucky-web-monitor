@@ -1,23 +1,22 @@
-import json, requests, datetime, csv, os, urllib3, re
+import json, requests, datetime, csv, os, urllib3, re, ipaddress
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, Response
 from apscheduler.schedulers.background import BackgroundScheduler
 from contextlib import asynccontextmanager
-import ipaddress
-import requests
 
 # 彻底禁用 InsecureRequestWarning 警告
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # --- 目录与文件路径配置 ---
-DATA_DIR = "data"
 CONFIG_DIR = "config"
+DATA_DIR = "data"
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
 CSV_FILE = os.path.join(DATA_DIR, "lucky_logs.csv")
 GEO_CACHE_FILE = os.path.join(DATA_DIR, "ip_geo.json")
-ICON_FILE = os.path.join(DATA_DIR, "icon.png") # 定义图标路径
+ICON_FILE = os.path.join(DATA_DIR, "icon.png")
 
-# 确保数据目录存在
+# 确保目录存在
+os.makedirs(CONFIG_DIR, exist_ok=True)
 os.makedirs(DATA_DIR, exist_ok=True)
 
 # --- 1. 配置加载逻辑 ---
@@ -31,7 +30,7 @@ def load_config():
     if not os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
             json.dump(default_config, f, indent=4, ensure_ascii=False)
-        print(f"[*] 已生成默认配置，请修改 {CONFIG_FILE} 后重启程序。")
+        print(f"[*] 已在 {CONFIG_DIR} 目录生成默认配置，请修改后重启。")
         return default_config
     with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
         return json.load(f)
@@ -40,16 +39,15 @@ config = load_config()
 LUCKY_URL = config.get("lucky_url")
 TOKEN = config.get("open_token")
 SYNC_MINS = config.get("sync_interval_minutes", 1)
-SYNC_SECONDS = config.get("sync_interval_seconds")
+SYNC_SECONDS = config.get("sync_interval_seconds", 30)
 
 # --- 2. 优化连接池 ---
 session = requests.Session()
 session.headers.update({"openToken": TOKEN})
 session.verify = False
 
-# --- 3. 归属地持久化逻辑 ---
+# --- 3. 归属地判定与查询逻辑 ---
 ip_geo_cache = {}
-
 if os.path.exists(GEO_CACHE_FILE):
     try:
         with open(GEO_CACHE_FILE, 'r', encoding='utf-8') as f:
@@ -63,75 +61,49 @@ def save_geo_cache():
     except Exception as e:
         print(f"保存 Geo 缓存失败: {e}")
 
-ip_geo_cache = {}
-
 def is_local_ip(ip: str) -> bool:
-    """判断是否为局域网/本地地址（IPv4 + IPv6）"""
+    """使用标准库判断是否为局域网/本地地址（IPv4 + IPv6）"""
     try:
         addr = ipaddress.ip_address(ip)
-        return (
-            addr.is_private      # 私网：10/8, 172.16/12, 192.168/16, fc00::/7
-            or addr.is_loopback  # 127.0.0.1, ::1
-            or addr.is_link_local# 169.254/16, fe80::/10
-            or addr.is_reserved
-            or addr.is_multicast
-            or addr.is_unspecified  # 0.0.0.0, ::
-        )
+        return (addr.is_private or addr.is_loopback or addr.is_link_local
+                or addr.is_reserved or addr.is_multicast or addr.is_unspecified)
     except ValueError:
-        return False  # 非法IP，留给后续查询失败处理
+        return False
 
 def get_geo(ip):
     ip = ip.strip()
+    if "%" in ip: ip = ip.split("%", 1)[0] # 处理 IPv6 Zone ID
 
-    # 可选：去掉 IPv6 zone id（如 fe80::1%eth0）
-    if "%" in ip:
-        ip = ip.split("%", 1)[0]
+    if is_local_ip(ip): return "局域网"
+    if ip in ip_geo_cache: return ip_geo_cache[ip]
 
-    if is_local_ip(ip):
-        return "局域网"
+    location = ""
+    try:
+        # IPv6 使用 ipw.cn 查询
+        if ":" in ip:
+            r = requests.get("https://rest.ipw.cn/api/ip/query",
+                             params={"ip": ip, "lang": "zh"},
+                             headers={"User-Agent": "Mozilla/5.0"}, timeout=3)
+            if r.status_code == 200:
+                d = r.json().get("data", {})
+                parts = [d.get(k) for k in ["country", "province", "city", "isp"] if d.get(k)]
+                location = " ".join(parts)
+        # IPv4 使用 ip-api.com 查询
+        else:
+            r = requests.get(f"http://ip-api.com/json/{ip}?lang=zh-CN", timeout=3)
+            res = r.json()
+            if res.get('status') == 'success':
+                location = f"{res.get('regionName','')} {res.get('city','')}".strip()
 
-    if ip in ip_geo_cache:
-        return ip_geo_cache[ip]
+        if location:
+            ip_geo_cache[ip] = location
+            save_geo_cache()
+            return location
+        return "查询失败"
+    except:
+        return "查询超时"
 
-    # IPv6 使用 ipw.cn API 查询
-    if ":" in ip:
-        try:
-            r = requests.get(
-                "https://rest.ipw.cn/api/ip/query",
-                params={"ip": ip, "lang": "zh"},
-                headers={
-                    "accept": "application/json",
-                    "origin": "https://ipw.cn",
-                    "referer": "https://ipw.cn/",
-                    "user-agent": "Mozilla/5.0",
-                },
-                timeout=3,
-            )
-            print(f"[ipw.cn] status={r.status_code} ip={ip} body={r.text}")
-            if r.status_code != 200:
-                return "查询失败"
-            data = r.json()
-            if isinstance(data, dict):
-                nested = data.get("data") if isinstance(data.get("data"), dict) else data
-                if isinstance(nested, dict):
-                    parts = [
-                        nested.get("continent"),
-                        nested.get("country"),
-                        nested.get("province"),
-                        nested.get("city"),
-                        nested.get("district"),
-                        nested.get("isp"),
-                    ]
-                    parts = [p for p in parts if isinstance(p, str) and p.strip()]
-                    if parts:
-                        ip_geo_cache[ip] = " ".join(parts)
-                        save_geo_cache()
-                        return ip_geo_cache[ip]
-            return "查询失败"
-        except Exception:
-            return "查询超时"
-
-# --- 4. CSV 持久化逻辑 ---
+# --- 4. 日志持久化逻辑 ---
 def load_csv_logs():
     logs = []
     if os.path.exists(CSV_FILE):
@@ -156,14 +128,14 @@ data_cache = {"logs": current_logs, "ip_rank": [], "last_update": "启动中..."
 
 def fetch_lucky_data():
     global data_cache, current_logs
+    print(f"[{datetime.datetime.now().strftime('%H:%M:%S')}] 开始同步数据...")
     try:
         r_resp = session.get(f"{LUCKY_URL}/api/webservice/rules", timeout=10)
         rules_list = r_resp.json().get('ruleList', [])
         new_fetched_logs = []
 
         for rule in rules_list:
-            rk = rule.get('RuleKey')
-            proxy_list = rule.get('ProxyList') or []
+            rk, proxy_list = rule.get('RuleKey'), rule.get('ProxyList') or []
             for proxy in proxy_list:
                 sk = proxy.get('Key')
                 r_name = proxy.get('Remark') or (proxy.get('Domains')[0] if proxy.get('Domains') else sk)
@@ -174,31 +146,26 @@ def fetch_lucky_data():
                         ext = json.loads(l.get('LogContent', '{}')).get('ExtInfo', {})
                         if ext:
                             new_fetched_logs.append({
-                                "time": l['LogTime'],
-                                "ip": ext.get('ClientIP'),
-                                "host": ext.get('Host'),
-                                "method": ext.get('Method'),
-                                "url": ext.get('URL'),
-                                "rule": r_name
+                                "time": l['LogTime'], "ip": ext.get('ClientIP'),
+                                "host": ext.get('Host'), "method": ext.get('Method'),
+                                "url": ext.get('URL'), "rule": r_name
                             })
                 except: continue
 
-        # 去重合并
+        # 数据合并与去重
         existing_keys = set((x['time'], x['ip'], x['url']) for x in current_logs)
         for log in new_fetched_logs:
-            key = (log['time'], log['ip'], log['url'])
-            if key not in existing_keys:
+            if (log['time'], log['ip'], log['url']) not in existing_keys:
                 current_logs.append(log)
-                existing_keys.add(key)
 
         current_logs.sort(key=lambda x: x['time'], reverse=True)
         current_logs = current_logs[:2000]
         save_logs_to_csv(current_logs)
 
+        # 计算排行
         ip_counts = {}
         for l in current_logs:
-            ip = l['ip']
-            ip_counts[ip] = ip_counts.get(ip, 0) + 1
+            ip_counts[l['ip']] = ip_counts.get(l['ip'], 0) + 1
 
         rank = [{"ip": ip, "count": count, "location": get_geo(ip)} for ip, count in ip_counts.items()]
 
@@ -229,13 +196,10 @@ def get_api_data(): return data_cache
 @app.get("/")
 def read_index(): return FileResponse('index.html')
 
-# --- 新增：Icon 图标路由 ---
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
-    if os.path.exists(ICON_FILE):
-        return FileResponse(ICON_FILE)
-    return Response(status_code=404)
+    return FileResponse(ICON_FILE) if os.path.exists(ICON_FILE) else Response(status_code=404)
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=10099)
+    uvicorn.run(app, host="0.0.0.0", port=8001)
