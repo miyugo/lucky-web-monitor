@@ -8,5 +8,6 @@ services:
     environment:
       - TZ=Asia/Shanghai
     volumes:
+      - ./config:/app/config  # 核心：将宿主机的 config 目录映射进去
       - ./data:/app/data  # 核心：将宿主机的 data 目录映射进去
     restart: always
