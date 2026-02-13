@@ -6,4 +6,4 @@ COPY index.html .
 # 暴露 8001 端口
 EXPOSE 8001
 # 启动模块 main:app，端口 8001
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"]
+CMD ["python", "main.py"]
